@@ -20,7 +20,6 @@ export async function executeAIEmployeeTask(
     throw new Error('AI Employee not found');
   }
 
-  // 1. Initialize the conversation with the employee's system prompt
   const messages = [
     { role: 'user', content: input },
   ];
@@ -33,24 +32,23 @@ export async function executeAIEmployeeTask(
     tools: Object.values(TOOL_REGISTRY).map(t => ({
       name: t.name,
       description: t.description,
-      input_schema: t.parameters,
+      input_schema: {
+        type: 'object',
+        properties: t.parameters,
+      },
     })),
   });
 
-  // 2. Handle Tool Use
   if (response.stop_reason === 'tool_use') {
     const toolCall = response.content.find(c => c.type === 'tool_use');
 
     if (toolCall) {
       const { name, input: toolInput } = toolCall;
+      const typedInput = toolInput as any;
 
       if (isProtectedTool(name)) {
-        // STAGE AND COMMIT PATTERN: Intercept and save as ApprovalRequest
-
-        // Ensure we have a task record
         let currentTaskId = taskId;
         if (!currentTaskId) {
-          // Create a generic task for a manual trigger
           currentTaskId = await prisma.task.create({
             data: {
               workflowId: null as any,
@@ -66,7 +64,7 @@ export async function executeAIEmployeeTask(
             taskId: currentTaskId,
             proposedAction: {
               tool: name,
-              args: toolInput,
+              args: typedInput,
               aiResponse: response.content.filter(c => c.type === 'text').map(t => (t as any).text).join('\n'),
             },
             status: 'PENDING',
@@ -79,15 +77,13 @@ export async function executeAIEmployeeTask(
           taskId: currentTaskId,
         };
       } else {
-        // Execute public tool immediately
         let toolResult;
         if (name === 'web.search') {
-          toolResult = await performWebSearch(toolInput.query as string);
+          toolResult = await performWebSearch(typedInput.query as string);
         } else {
           toolResult = `Successfully executed ${name}`;
         }
 
-        // In a production loop, we would feed this result back to Claude for a final response.
         return {
           status: 'COMPLETED',
           output: toolResult,
