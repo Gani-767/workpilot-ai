@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id            String    @id @default(cuid())
+  name          String
+  slug          String    @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  users         User[]
+  employees     AIEmployee[]
+  credentials   IntegrationCredential[]
+  workflows     Workflow[]
+}
+
+model User {
+  id             String       @id // Clerk ID
+  email          String       @unique
+  name           String?
+  role           UserRole     @default(MEMBER)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  approvals     ApprovalRequest[]
+  createdAt      DateTime     @default(now())
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+model AIEmployee {
+  id             String       @id @default(cuid())
+  name           String
+  role           String
+  systemPrompt   String       @db.Text
+  status         EmployeeStatus @default(ACTIVE)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  workflows      Workflow[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  PAUSED
+}
+
+model IntegrationCredential {
+  id             String       @id @default(cuid())
+  provider       String       // e.g., "google", "tavily"
+  encryptedToken String       @db.Text
+  refreshToken   String?      @db.Text
+  expiresAt      DateTime?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Workflow {
+  id             String       @id @default(cuid())
+  name           String
+  description    String?
+  schedule       String?      // Cron string
+  aiEmployeeId   String
+  aiEmployee     AIEmployee   @relation(fields: [aiEmployeeId], references: [id])
+  triggerType    TriggerType  @default(SCHEDULED)
+  status         WorkflowStatus @default(ENABLED)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  tasks          Task[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+enum TriggerType {
+  SCHEDULED
+  MANUAL
+}
+
+enum WorkflowStatus {
+  ENABLED
+  DISABLED
+}
+
+model Task {
+  id             String            @id @default(cuid())
+  workflowId     String
+  workflow       Workflow          @relation(fields: [workflowId], references: [id])
+  status         TaskStatus       @default(PENDING)
+  inputData      Json
+  outputData     Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  approvals      ApprovalRequest[]
+}
+
+enum TaskStatus {
+  PENDING
+  RUNNING
+  AWAITING_APPROVAL
+  COMPLETED
+  FAILED
+}
+
+model ApprovalRequest {
+  id             String       @id @default(cuid())
+  taskId         String
+  task           Task         @relation(fields: [taskId], references: [id])
+  proposedAction Json         // { tool: 'gmail.send', args: { ... } }
+  status         ApprovalStatus @default(PENDING)
+  reviewerId     String?
+  reviewer       User?        @relation(fields: [reviewerId], references: [id])
+  reviewedAt     DateTime?
+  feedback       String?      @db.Text
+  createdAt      DateTime     @default(now())
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
